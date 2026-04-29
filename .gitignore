@@ -29,3 +29,4 @@ dist/
 build/
 *.egg-info/
 *.egg
+.aider*
