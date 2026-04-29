@@ -528,3 +528,53 @@
 
 # 2026-04-29 17:22:31.666289
 +/exit
+
+# 2026-04-29 18:30:39.649298
++n
+
+# 2026-04-29 18:30:44.407841
++请为模拟组合系统增加 instrument_map.json，并修复 execution_simulator.py：
++
++1. 新建 config/instrument_map.json
++2. 将 SH_INDEX 映射到 “上证指数 最新价”
++3. execution_simulator.py 根据 ticker 去 instrument_map 找查询语句
++4. 调用 /root/mx-skills/mx-data/mx_data.py 获取真实价格
++5. 成功则 price_source=actual
++6. 失败才 price_source=mock
++7. 保留禁止同日买卖逻辑
++8. 成交后更新 positions.json 和 trades.csv
+
+# 2026-04-29 18:30:48.341879
++y
+
+# 2026-04-29 21:39:28.312897
++/exit
+
+# 2026-04-29 21:42:37.606373
++n
+
+# 2026-04-29 21:42:47.929420
++请修复 execution_simulator.py 的价格解析逻辑：
++
++当前 mx_data.py 输出不是纯数字，而是包含 markdown 表格，例如：
++
++| date | 最新价 |
++| --- | --- |
++| 2026-04-29 21:41 | 4107.51 |
++
++现在 execution_simulator.py 因为无法 float(整个输出) 而 fallback mock。
++
++要求：
++1. 在 execution_simulator.py 中新增 parse_price_from_output(output) 函数。
++2. 该函数应能从 mx_data.py 的 markdown 输出中提取最新价数字，例如 4107.51。
++3. 优先匹配表格行里的最后一个数字。
++4. 如果提取成功，返回 float。
++5. 如果提取失败，再 fallback mock。
++6. 成交记录中 price_source 应为 actual，而不是 mock。
++7. 不要修改 mx_data.py，只改 execution_simulator.py。
+
+# 2026-04-29 21:42:51.191646
++y
+
+# 2026-04-29 21:44:41.821180
++/exit
