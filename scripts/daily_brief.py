@@ -2,6 +2,12 @@ import os
 import subprocess
 from datetime import datetime
 from openai import OpenAI
+import sys
+import traceback
+
+# Add the scripts directory to path so we can import feishu_push
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import feishu_push
 
 client = OpenAI(
  api_key="sk-35dc549095704b04aa21397911b581dc",
@@ -53,15 +59,25 @@ prompt = f"""
 要求：简洁、有结论
 """
 
-response = client.chat.completions.create(
-    model="deepseek-chat",
-    messages=[{"role": "user", "content": prompt}]
-)
+try:
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[{"role": "user", "content": prompt}]
+    )
 
-analysis = response.choices[0].message.content
+    analysis = response.choices[0].message.content
 
-with open(report_file, "w", encoding="utf-8") as f:
-    f.write(f"# 盘前简报 {today}\n\n")
-    f.write(analysis)
+    with open(report_file, "w", encoding="utf-8") as f:
+        f.write(f"# 盘前简报 {today}\n\n")
+        f.write(analysis)
 
-print(f"盘前报告生成：{report_file}")
+    print(f"盘前报告生成：{report_file}")
+
+    # Push to Feishu
+    feishu_push.push_text(analysis)
+
+except Exception as e:
+    print(f"Error: {e}")
+    traceback.print_exc()
+    # Don't exit with error so cron doesn't complain
+    sys.exit(0)
