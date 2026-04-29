@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from datetime import datetime
 from openai import OpenAI
 
@@ -17,7 +18,12 @@ REPORT_DIR = f"{BASE_DIR}/reports/company"
 os.makedirs(REPORT_DIR, exist_ok=True)
 
 # ====== 输入 ======
-company = input("请输入要研究的公司名称：").strip()
+if len(sys.argv) > 1:
+    company = sys.argv[1]
+else:
+    print("Usage: python company_research.py <company_name>")
+    sys.exit(1)
+
 today = datetime.now().strftime("%Y-%m-%d")
 report_file = f"{REPORT_DIR}/{company}_research_{today}.md"
 
