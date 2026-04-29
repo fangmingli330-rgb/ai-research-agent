@@ -11,6 +11,19 @@ sys.path.insert(0, _scripts_dir)
 
 import feishu_push
 
+# Check for required dependencies
+try:
+    import requests
+except ImportError:
+    print("Error: 'requests' library is not installed. Please run: pip install requests")
+    sys.exit(0)
+
+try:
+    import openai
+except ImportError:
+    print("Error: 'openai' library is not installed. Please run: pip install openai")
+    sys.exit(0)
+
 client = OpenAI(
  api_key="sk-35dc549095704b04aa21397911b581dc",
  base_url="https://api.deepseek.com"
@@ -37,7 +50,11 @@ raw_text = ""
 for q in queries:
     print(f"查询：{q}")
     # Use sys.executable to ensure same Python interpreter
-    cmd = f'{sys.executable} /root/mx-skills/mx-data/mx_data.py "{q}"'
+    mx_data_path = "/root/mx-skills/mx-data/mx_data.py"
+    if not os.path.exists(mx_data_path):
+        print(f"Warning: {mx_data_path} does not exist. Skipping query.")
+        continue
+    cmd = f'{sys.executable} {mx_data_path} "{q}"'
     result = subprocess.run(
         cmd,
         shell=True,
