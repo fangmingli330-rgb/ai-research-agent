@@ -96,8 +96,12 @@ try:
 
     print(f"盘前报告生成：{report_file}")
 
-    # Push to Feishu using the report file path
-    feishu_push.push_text(report_file, is_path=True)
+    # Verify report file exists before pushing
+    if not os.path.exists(report_file):
+        print(f"Error: Report file {report_file} was not created. Skipping Feishu push.")
+    else:
+        # Push to Feishu using the report file path
+        feishu_push.push_text(report_file, is_path=True)
 
 except Exception as e:
     print(f"Error: {e}")
