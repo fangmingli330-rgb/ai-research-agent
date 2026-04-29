@@ -9,6 +9,7 @@ Strictly avoids look-ahead bias: execution uses only prices available on executi
 import json
 import os
 import csv
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -55,6 +56,44 @@ def save_positions(positions: Dict[str, Any]) -> None:
     with open(POSITIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(positions, f, ensure_ascii=False, indent=2)
 
+def parse_price_from_output(output: str) -> Optional[float]:
+    """
+    Extract the latest price from mx_data.py's markdown table output.
+    The output looks like:
+
+    | date | 最新价 |
+    | --- | --- |
+    | 2026-04-29 21:41 | 4107.51 |
+
+    We look for the last numeric value in the table rows.
+    Returns the price as float, or None if parsing fails.
+    """
+    # Split into lines
+    lines = output.strip().splitlines()
+    # Find lines that contain a pipe and a number (potential table rows)
+    for line in reversed(lines):
+        # Remove leading/trailing whitespace
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        # Split by pipe
+        parts = [p.strip() for p in line.split("|") if p.strip()]
+        if len(parts) < 2:
+            continue
+        # The last part should be the price column
+        last_part = parts[-1]
+        # Try to extract a float from the last part
+        # It may contain commas, spaces, etc.
+        # Use regex to find the last number (including decimal)
+        numbers = re.findall(r"\d+\.?\d*", last_part)
+        if numbers:
+            # Take the last number found
+            try:
+                return float(numbers[-1])
+            except ValueError:
+                continue
+    return None
+
 def get_execution_price(ticker: str, execution_date: str) -> Tuple[Optional[float], str]:
     """
     Get the opening price for ticker on execution_date.
@@ -79,10 +118,11 @@ def get_execution_price(ticker: str, execution_date: str) -> Tuple[Optional[floa
             if result.returncode == 0:
                 output = result.stdout.strip()
                 if output:
-                    try:
-                        price = float(output)
+                    # Try to parse price from markdown output
+                    price = parse_price_from_output(output)
+                    if price is not None:
                         return (price, "actual")
-                    except ValueError:
+                    else:
                         print(f"[execution_simulator] Could not parse price from mx_data output: {output}")
             else:
                 print(f"[execution_simulator] mx_data.py returned error: {result.stderr}")
