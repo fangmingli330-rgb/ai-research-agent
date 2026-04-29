@@ -1,7 +1,6 @@
 import os
 import subprocess
 from datetime import datetime
-from openai import OpenAI
 import sys
 import traceback
 
@@ -9,9 +8,7 @@ import traceback
 _scripts_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _scripts_dir)
 
-import feishu_push
-
-# Check for required dependencies
+# Check for required dependencies before importing them
 try:
     import requests
 except ImportError:
@@ -23,6 +20,9 @@ try:
 except ImportError:
     print("Error: 'openai' library is not installed. Please run: pip install openai")
     sys.exit(0)
+
+from openai import OpenAI
+import feishu_push
 
 client = OpenAI(
  api_key="sk-35dc549095704b04aa21397911b581dc",
