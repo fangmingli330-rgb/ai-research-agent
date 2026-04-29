@@ -12,7 +12,7 @@ import csv
 import subprocess
 import sys
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 PORTFOLIO_DIR = "portfolio"
 PENDING_ORDERS_FILE = os.path.join(PORTFOLIO_DIR, "pending_orders.json")
@@ -46,12 +46,13 @@ def save_positions(positions: Dict[str, Any]) -> None:
     with open(POSITIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(positions, f, ensure_ascii=False, indent=2)
 
-def get_execution_price(ticker: str, execution_date: str) -> Optional[float]:
+def get_execution_price(ticker: str, execution_date: str) -> Tuple[Optional[float], str]:
     """
     Get the opening price for ticker on execution_date.
     Uses subprocess to call /root/mx-skills/mx-data/mx_data.py.
     If that fails, falls back to a mock price (100.0) and prints a warning.
     禁止同日买卖，防止事后诸葛亮
+    Returns (price, source) where source is "actual" or "mock".
     """
     # Try real data source first
     if os.path.exists(MX_DATA_SCRIPT):
@@ -67,7 +68,7 @@ def get_execution_price(ticker: str, execution_date: str) -> Optional[float]:
                 if output:
                     try:
                         price = float(output)
-                        return price
+                        return (price, "actual")
                     except ValueError:
                         print(f"[execution_simulator] Could not parse price from mx_data output: {output}")
             else:
@@ -79,7 +80,7 @@ def get_execution_price(ticker: str, execution_date: str) -> Optional[float]:
 
     # Fallback: mock price
     print(f"[execution_simulator] WARNING: Using mock price 100.0 for {ticker} on {execution_date}")
-    return 100.0
+    return (100.0, "mock")
 
 def execute_pending_orders(execution_date: str) -> None:
     """
@@ -94,11 +95,15 @@ def execute_pending_orders(execution_date: str) -> None:
 
     positions = load_positions()
     trades = []
-    # Read existing trades if any
+    # Read existing trades if any, handling missing price_source column
     if os.path.exists(TRADES_FILE):
         with open(TRADES_FILE, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            trades = list(reader)
+            for row in reader:
+                # Ensure all required fields exist, fill missing with empty string
+                if "price_source" not in row:
+                    row["price_source"] = "legacy"
+                trades.append(row)
 
     executed_orders = []
     for order in pending:
@@ -120,7 +125,7 @@ def execute_pending_orders(execution_date: str) -> None:
             continue
 
         # Get execution price (T+1 open)
-        price = get_execution_price(ticker, execution_date)
+        price, price_source = get_execution_price(ticker, execution_date)
         if price is None:
             print(f"[execution_simulator] Could not get price for {ticker} on {execution_date}, skipping order.")
             continue
@@ -153,6 +158,7 @@ def execute_pending_orders(execution_date: str) -> None:
             "signal_date": signal_date,
             "execution_date": execution_date,
             "execution_price": price,
+            "price_source": price_source,
             "shares": shares if action == "buy" else -shares,
             "reason": reason,
             "is_test_order": is_test
@@ -161,8 +167,7 @@ def execute_pending_orders(execution_date: str) -> None:
         executed_orders.append(order)
 
     # Remove executed orders from pending (skipped orders remain)
-    for exec_order in executed_orders:
-        pending.remove(exec_order)
+    pending = [o for o in pending if o not in executed_orders]
 
     # Save updated data
     save_positions(positions)
@@ -171,7 +176,7 @@ def execute_pending_orders(execution_date: str) -> None:
     # Write trades CSV
     os.makedirs(PORTFOLIO_DIR, exist_ok=True)
     with open(TRADES_FILE, "w", newline="", encoding="utf-8") as f:
-        fieldnames = ["ticker", "action", "signal_date", "execution_date", "execution_price", "shares", "reason", "is_test_order"]
+        fieldnames = ["ticker", "action", "signal_date", "execution_date", "execution_price", "price_source", "shares", "reason", "is_test_order"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(trades)
@@ -179,7 +184,7 @@ def execute_pending_orders(execution_date: str) -> None:
     # Update portfolio value
     total_value = 0.0
     for ticker, pos in positions.items():
-        p = get_execution_price(ticker, execution_date)
+        p, _ = get_execution_price(ticker, execution_date)
         if p is not None:
             total_value += pos["shares"] * p
     # Read existing value history

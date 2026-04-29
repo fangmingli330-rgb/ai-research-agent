@@ -55,7 +55,8 @@ if __name__ == "__main__":
         if price is not None:
             print(price)
         else:
-            print("ERROR: could not get price")
+            # 输出空，退出码非0，表示失败
+            sys.exit(1)
     else:
         # 测试
         print(get_price("宁德时代", "2026-04-28"))
