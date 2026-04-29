@@ -45,6 +45,9 @@ for q in queries:
         stderr=subprocess.PIPE,
         universal_newlines=True
     )
+    if result.returncode != 0:
+        print(f"Warning: mx_data.py returned non-zero exit code {result.returncode}")
+        print(f"stderr: {result.stderr[:500]}")
     raw_text += f"\n\n{q}\n{result.stdout[:1000]}"
 
 print("开始AI分析...")

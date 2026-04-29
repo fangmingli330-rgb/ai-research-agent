@@ -34,6 +34,7 @@ queries = [
 raw_text = ""
 
 for q in queries:
+    print(f"查询：{q}")
     # Use sys.executable to ensure same Python interpreter
     cmd = f'{sys.executable} /root/mx-skills/mx-data/mx_data.py "{q}"'
     result = subprocess.run(
@@ -43,6 +44,9 @@ for q in queries:
         stderr=subprocess.PIPE,
         universal_newlines=True
     )
+    if result.returncode != 0:
+        print(f"Warning: mx_data.py returned non-zero exit code {result.returncode}")
+        print(f"stderr: {result.stderr[:500]}")
     raw_text += f"\n\n{q}\n{result.stdout[:1000]}"
 
 prompt = f"""
