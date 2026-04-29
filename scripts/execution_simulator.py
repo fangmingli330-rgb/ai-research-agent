@@ -3,7 +3,7 @@ execution_simulator.py
 Reads pending orders from pending_orders.json and executes them using
 next-day (T+1) prices obtained from mx_data.py via subprocess.
 Strictly avoids look-ahead bias: execution uses only prices available on execution_date.
-禁止未来函数（no look-ahead bias）
+禁止同日买卖，防止事后诸葛亮（no same-day trade, prevent hindsight bias）
 """
 
 import json
@@ -51,7 +51,7 @@ def get_execution_price(ticker: str, execution_date: str) -> Optional[float]:
     Get the opening price for ticker on execution_date.
     Uses subprocess to call /root/mx-skills/mx-data/mx_data.py.
     If that fails, falls back to a mock price (100.0) and prints a warning.
-    禁止未来函数（no look-ahead bias）
+    禁止同日买卖，防止事后诸葛亮
     """
     # Try real data source first
     if os.path.exists(MX_DATA_SCRIPT):
@@ -85,7 +85,7 @@ def execute_pending_orders(execution_date: str) -> None:
     """
     Execute all pending orders using prices from execution_date.
     Updates positions, records trades, and updates portfolio value.
-    禁止未来函数（no look-ahead bias）
+    禁止同日买卖，防止事后诸葛亮
     """
     pending = load_pending_orders()
     if not pending:
@@ -108,16 +108,22 @@ def execute_pending_orders(execution_date: str) -> None:
         reason = order.get("reason", "")
         target_weight = order.get("target_weight", 0.0)
         is_test = order.get("is_test_order", False)
+        # 读取 shares 字段，若缺失则使用默认值 100（必须为正数）
+        shares = order.get("shares", 100)
+        if shares <= 0:
+            print(f"[execution_simulator] Invalid shares ({shares}) for {ticker}, skipping order.")
+            continue
+
+        # 禁止同日买卖：如果 execution_date <= signal_date，则跳过此订单
+        if execution_date <= signal_date:
+            print(f"[execution_simulator] 禁止同日买卖，等待下一交易日: {ticker} signal_date={signal_date} execution_date={execution_date}")
+            continue
 
         # Get execution price (T+1 open)
         price = get_execution_price(ticker, execution_date)
         if price is None:
             print(f"[execution_simulator] Could not get price for {ticker} on {execution_date}, skipping order.")
             continue
-
-        # For simplicity, we assume a fixed number of shares (e.g., 100)
-        # In a real system, target_weight would determine quantity.
-        shares = 100  # placeholder
 
         # Update positions
         if action == "buy":
@@ -154,7 +160,7 @@ def execute_pending_orders(execution_date: str) -> None:
         trades.append(trade)
         executed_orders.append(order)
 
-    # Remove executed orders from pending
+    # Remove executed orders from pending (skipped orders remain)
     for exec_order in executed_orders:
         pending.remove(exec_order)
 
