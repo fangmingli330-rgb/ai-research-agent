@@ -18,44 +18,66 @@ def log(msg):
     """Simple logging function."""
     print(f"[weekly_report] {msg}")
 
+# ---------- Fallback simulated data ----------
+FALLBACK_OVERALL_CHANGE = 1.2
+FALLBACK_SECTORS = [
+    ("科技", 3.5, "AI概念持续活跃"),
+    ("消费", 0.8, "白酒板块企稳"),
+    ("医药", -0.5, "集采压力仍存"),
+    ("金融", 1.0, "银行股表现稳健"),
+    ("新能源", 2.2, "政策利好推动"),
+]
+FALLBACK_MACRO_LINES = [
+    "- CPI同比上涨0.5%，PPI同比下降2.8%",
+    "- 社融数据超预期，新增贷款同比多增",
+    "- 央行维持LPR不变，流动性合理充裕",
+]
+
+def get_real_data():
+    """
+    Try to fetch real market data from mx_data module.
+    Returns (overall_change, sectors, macro_lines) on success.
+    On failure, returns None.
+    """
+    try:
+        import mx_data
+        data = mx_data.get_market_data()
+        overall_change = data["overall_change"]
+        sectors = [(s["name"], s["change"], s["note"]) for s in data["sectors"]]
+        # macro_lines can be provided by mx_data or we keep fallback
+        macro_lines = data.get("macro_lines", FALLBACK_MACRO_LINES)
+        return overall_change, sectors, macro_lines
+    except Exception as e:
+        log(f"Failed to fetch real data: {e}. Falling back to simulated data.")
+        return None
+
 def generate_report():
     """Generate the weekly report and push it."""
     today = date.today().isoformat()
     report_lines = []
 
-    # Simulated market data
-    overall_change = 1.2  # percentage
-    market_review_text = (
-        "本周A股市场整体震荡上行，上证指数上涨1.2%，深证成指上涨1.8%。"
-        "成交量较上周有所放大，北向资金净流入约150亿元。"
-        "市场情绪有所回暖，但板块分化明显。"
-    )
-
-    # Simulated sector data: (name, change%, note)
-    sectors = [
-        ("科技", 3.5, "AI概念持续活跃"),
-        ("消费", 0.8, "白酒板块企稳"),
-        ("医药", -0.5, "集采压力仍存"),
-        ("金融", 1.0, "银行股表现稳健"),
-        ("新能源", 2.2, "政策利好推动"),
-    ]
-
-    # Macro data (simulated)
-    macro_lines = [
-        "- CPI同比上涨0.5%，PPI同比下降2.8%",
-        "- 社融数据超预期，新增贷款同比多增",
-        "- 央行维持LPR不变，流动性合理充裕",
-    ]
+    # ---------- Get data (real or fallback) ----------
+    real = get_real_data()
+    if real is not None:
+        overall_change, sectors, macro_lines = real
+    else:
+        overall_change = FALLBACK_OVERALL_CHANGE
+        sectors = FALLBACK_SECTORS
+        macro_lines = FALLBACK_MACRO_LINES
 
     # ---------- Build report ----------
     # Title
     report_lines.append(f"# 周报 - {today}")
     report_lines.append("")
 
-    # Section 1: Market Review
+    # Section 1: Market Review (use real overall_change)
     report_lines.append("## 市场回顾")
     report_lines.append("")
-    report_lines.append(market_review_text)
+    report_lines.append(
+        f"本周A股市场整体震荡上行，上证指数上涨{overall_change}%，深证成指上涨1.8%。"
+        "成交量较上周有所放大，北向资金净流入约150亿元。"
+        "市场情绪有所回暖，但板块分化明显。"
+    )
     report_lines.append("")
 
     # Section 2: Sector Performance (build table from data)
