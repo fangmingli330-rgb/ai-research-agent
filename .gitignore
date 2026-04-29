@@ -14,7 +14,10 @@ logs/
 
 # Data files
 data/
-portfolio/
+portfolio/trades.csv
+portfolio/positions.json
+portfolio/pending_orders.json
+portfolio/portfolio_value.csv
 
 # Generated reports
 reports/
@@ -39,3 +42,13 @@ build/
 
 # Word documents
 *.docx
+
+# Excel files
+*.xlsx
+
+# Raw JSON / description files
+*_raw.json
+*_description.txt
+
+# Date directories (e.g. 2026-04-29/)
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
