@@ -93,8 +93,8 @@ try:
 
     print(f"盘后报告生成：{report_file}")
 
-    # Push to Feishu
-    feishu_push.push_text(analysis)
+    # Push to Feishu using the report file path
+    feishu_push.push_text(report_file, is_path=True)
 
 except Exception as e:
     print(f"Error: {e}")

@@ -2,16 +2,24 @@ import sys
 import requests
 import json
 import time
+import os
 
 APP_ID = "cli_a97be1d34a781ceb"
 APP_SECRET = "3HmPPOSa0g9nB1w9Vtftgd6aJaKFKMAx"
 OPEN_ID = "ou_516f79447932bb772bae0ffc10bf9e46"
 
-def push_text(text, max_retries=3):
+def push_text(text_or_path, max_retries=3, is_path=False):
     """
     Push a text message to Feishu user.
+    If is_path is True, text_or_path is treated as a file path and its content is read.
     Retries up to max_retries times on failure.
     """
+    if is_path:
+        with open(text_or_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    else:
+        text = text_or_path
+
     # Truncate to 3800 characters as Feishu limit
     text = text[:3800]
 
@@ -51,8 +59,6 @@ if __name__ == "__main__":
     # Allow running directly with a file path argument (original behavior)
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
-        push_text(text)
+        push_text(file_path, is_path=True)
     else:
         print("Usage: python feishu_push.py <file_path>")
