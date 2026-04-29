@@ -3,6 +3,7 @@ import requests
 import json
 import time
 import os
+import re
 
 APP_ID = "cli_a97be1d34a781ceb"
 APP_SECRET = "3HmPPOSa0g9nB1w9Vtftgd6aJaKFKMAx"
@@ -54,6 +55,71 @@ def push_text(text_or_path, max_retries=3, is_path=False):
                 time.sleep(2)
             else:
                 print("All Feishu push attempts failed.")
+
+def push_card(text, max_retries=3):
+    """
+    Push a card message to Feishu user.
+    The text should be a markdown report with a first line starting with '# ' as title.
+    """
+    lines = text.split('\n')
+    title = "报告"
+    body_lines = []
+    for i, line in enumerate(lines):
+        if line.startswith('# '):
+            title = line[2:].strip()
+            # skip this line for body
+            continue
+        body_lines.append(line)
+    body = '\n'.join(body_lines).strip()
+
+    # Truncate body to 3800 characters
+    body = body[:3800]
+
+    card = {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": "blue"
+        },
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": body
+            }
+        ]
+    }
+
+    for attempt in range(max_retries):
+        try:
+            # Get tenant access token
+            res = requests.post(
+                "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+                json={"app_id": APP_ID, "app_secret": APP_SECRET},
+                timeout=10
+            )
+            res.raise_for_status()
+            token = res.json()["tenant_access_token"]
+
+            # Send message
+            res = requests.post(
+                "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={
+                    "receive_id": OPEN_ID,
+                    "msg_type": "interactive",
+                    "content": json.dumps(card)
+                },
+                timeout=10
+            )
+            res.raise_for_status()
+            print(f"Feishu card push succeeded: {res.json()}")
+            return
+        except Exception as e:
+            print(f"Feishu card push attempt {attempt+1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2)
+            else:
+                print("All Feishu card push attempts failed.")
 
 if __name__ == "__main__":
     # Allow running directly with a file path argument (original behavior)

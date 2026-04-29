@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 from datetime import datetime
 import sys
 import traceback
@@ -62,46 +63,53 @@ for q in queries:
         universal_newlines=True
     )
     if result.returncode != 0:
-        print(f"Warning: mx_data.py returned non-zero exit code {result.returncode}")
-        print(f"stderr: {result.stderr[:500]}")
+        print(f"Warning: mx_data.py returned non-zero exit code {result.returncode}. Skipping.")
+        continue
     raw_text += f"\n\n{q}\n{result.stdout[:1000]}"
 
 prompt = f"""
-你是一个A股策略分析师，请生成盘后总结：
+你是一个A股策略分析师，请生成盘后总结（结构化研报格式）：
 
 {raw_text}
 
-输出：
+请先输出一个表格，包含指标名称、最新值、变化方向（涨/跌/平）。然后输出以下分析：
 1. 市场整体表现
 2. 资金行为（北向/成交量）
 3. 市场结构（谁在涨/谁在跌）
 4. 明日预判
-要求：简洁、有结论
+要求：简洁、有结论，使用中文。
 """
 
-try:
-    response = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[{"role": "user", "content": prompt}]
-    )
+max_retries = 3
+analysis = None
+for attempt in range(max_retries):
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        analysis = response.choices[0].message.content
+        break
+    except Exception as e:
+        print(f"AI request attempt {attempt+1} failed: {e}")
+        if attempt < max_retries - 1:
+            time.sleep(2 ** attempt)
+        else:
+            print("All AI attempts failed.")
+            sys.exit(0)
 
-    analysis = response.choices[0].message.content
-
-    with open(report_file, "w", encoding="utf-8") as f:
-        f.write(f"# 盘后总结 {today}\n\n")
-        f.write(analysis)
-
-    print(f"盘后报告生成：{report_file}")
-
-    # Verify report file exists before pushing
-    if not os.path.exists(report_file):
-        print(f"Error: Report file {report_file} was not created. Skipping Feishu push.")
-    else:
-        # Push to Feishu using the report file path
-        feishu_push.push_text(report_file, is_path=True)
-
-except Exception as e:
-    print(f"Error: {e}")
-    traceback.print_exc()
-    # Don't exit with error so cron doesn't complain
+if analysis is None:
     sys.exit(0)
+
+with open(report_file, "w", encoding="utf-8") as f:
+    f.write(f"# 盘后总结 {today}\n\n")
+    f.write(analysis)
+
+print(f"盘后报告生成：{report_file}")
+
+# Verify report file exists before pushing
+if not os.path.exists(report_file):
+    print(f"Error: Report file {report_file} was not created. Skipping Feishu push.")
+else:
+    # Push to Feishu using card format
+    feishu_push.push_card(analysis)
