@@ -1,37 +1,51 @@
 import sys
 import requests
 import json
+import time
 
 APP_ID = "cli_a97be1d34a781ceb"
 APP_SECRET = "3HmPPOSa0g9nB1w9Vtftgd6aJaKFKMAx"
 OPEN_ID = "ou_516f79447932bb772bae0ffc10bf9e46"
 
-def push_text(text):
+def push_text(text, max_retries=3):
     """
     Push a text message to Feishu user.
+    Retries up to max_retries times on failure.
     """
     # Truncate to 3800 characters as Feishu limit
     text = text[:3800]
 
-    # Get tenant access token
-    res = requests.post(
-        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-        json={"app_id": APP_ID, "app_secret": APP_SECRET}
-    )
-    token = res.json()["tenant_access_token"]
+    for attempt in range(max_retries):
+        try:
+            # Get tenant access token
+            res = requests.post(
+                "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+                json={"app_id": APP_ID, "app_secret": APP_SECRET},
+                timeout=10
+            )
+            res.raise_for_status()
+            token = res.json()["tenant_access_token"]
 
-    # Send message
-    res = requests.post(
-        "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json={
-            "receive_id": OPEN_ID,
-            "msg_type": "text",
-            "content": json.dumps({"text": text})
-        }
-    )
-
-    print(res.json())
+            # Send message
+            res = requests.post(
+                "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={
+                    "receive_id": OPEN_ID,
+                    "msg_type": "text",
+                    "content": json.dumps({"text": text})
+                },
+                timeout=10
+            )
+            res.raise_for_status()
+            print(f"Feishu push succeeded: {res.json()}")
+            return
+        except Exception as e:
+            print(f"Feishu push attempt {attempt+1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2)
+            else:
+                print("All Feishu push attempts failed.")
 
 if __name__ == "__main__":
     # Allow running directly with a file path argument (original behavior)

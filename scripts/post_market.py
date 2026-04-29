@@ -5,8 +5,10 @@ from openai import OpenAI
 import sys
 import traceback
 
-# Add the scripts directory to path so we can import feishu_push
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Determine the absolute path to the scripts directory
+_scripts_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _scripts_dir)
+
 import feishu_push
 
 client = OpenAI(
@@ -32,7 +34,8 @@ queries = [
 raw_text = ""
 
 for q in queries:
-    cmd = f'python3 /root/mx-skills/mx-data/mx_data.py "{q}"'
+    # Use sys.executable to ensure same Python interpreter
+    cmd = f'{sys.executable} /root/mx-skills/mx-data/mx_data.py "{q}"'
     result = subprocess.run(
         cmd,
         shell=True,
