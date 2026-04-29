@@ -6,6 +6,7 @@ Provides market data functions with strict no-look-ahead bias.
 
 import os
 import json
+import sys
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
@@ -46,5 +47,15 @@ def get_historical_prices(ticker: str, start_date: str, end_date: str) -> Dict[s
     return prices
 
 if __name__ == "__main__":
-    # 测试
-    print(get_price("宁德时代", "2026-04-28"))
+    # 接受命令行参数：ticker date
+    if len(sys.argv) >= 3:
+        ticker = sys.argv[1]
+        date = sys.argv[2]
+        price = get_price(ticker, date)
+        if price is not None:
+            print(price)
+        else:
+            print("ERROR: could not get price")
+    else:
+        # 测试
+        print(get_price("宁德时代", "2026-04-28"))
