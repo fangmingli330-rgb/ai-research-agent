@@ -13,11 +13,22 @@ app = FastAPI()
 BASE_DIR = "/root/research_agent"
 sys.path.insert(0, BASE_DIR)
 
+LOG_FILE = "/tmp/feishu_event.log"
+
+def log_line(msg: str):
+    """Write a line to the log file and also print to stdout."""
+    print(msg)
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
 @app.post("/feishu/events")
 async def feishu_events(request: Request):
     body = await request.json()
     # 1. Print raw body
-    print(f"[feishu_event] raw body: {json.dumps(body, ensure_ascii=False)}")
+    log_line(f"[feishu_event] raw body: {json.dumps(body, ensure_ascii=False)}")
 
     # Challenge verification
     if "challenge" in body:
@@ -40,16 +51,16 @@ async def feishu_events(request: Request):
         text = content_str
 
     # 2. Print text
-    print(f"[feishu_event] text: {text}")
+    log_line(f"[feishu_event] text: {text}")
     # 3. Print open_id
-    print(f"[feishu_event] open_id: {open_id}")
+    log_line(f"[feishu_event] open_id: {open_id}")
     
     # Match patterns
     match = re.search(r'(研究公司|公司)\s+(.+)', text)
     if match:
         company_name = match.group(2).strip()
         # 4. Print company_name
-        print(f"[feishu_event] company_name: {company_name}")
+        log_line(f"[feishu_event] company_name: {company_name}")
         # Immediate reply
         reply_text = f"已收到研究任务：{company_name}，正在生成报告。"
         feishu_push.push_text(reply_text, open_id=open_id)
@@ -58,7 +69,7 @@ async def feishu_events(request: Request):
         return JSONResponse({"msg": "ok"})
     else:
         # 5. Print ignored
-        print("[feishu_event] ignored:")
+        log_line("[feishu_event] ignored:")
         # Not a research command, ignore
         return JSONResponse({"msg": "ignored"})
 
