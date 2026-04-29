@@ -1,7 +1,7 @@
 """
 execution_simulator.py
 Reads pending orders from pending_orders.json and executes them using
-next-day (T+1) prices obtained from mx_data.py.
+next-day (T+1) prices obtained from mx_data.py via subprocess.
 Strictly avoids look-ahead bias: execution uses only prices available on execution_date.
 禁止未来函数（no look-ahead bias）
 """
@@ -9,17 +9,18 @@ Strictly avoids look-ahead bias: execution uses only prices available on executi
 import json
 import os
 import csv
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-
-# Import mx_data for price retrieval
-from scripts.mx_data import get_price
 
 PORTFOLIO_DIR = "portfolio"
 PENDING_ORDERS_FILE = os.path.join(PORTFOLIO_DIR, "pending_orders.json")
 POSITIONS_FILE = os.path.join(PORTFOLIO_DIR, "positions.json")
 TRADES_FILE = os.path.join(PORTFOLIO_DIR, "trades.csv")
 PORTFOLIO_VALUE_FILE = os.path.join(PORTFOLIO_DIR, "portfolio_value.csv")
+
+MX_DATA_SCRIPT = "/root/mx-skills/mx-data/mx_data.py"
 
 def load_pending_orders() -> List[Dict[str, Any]]:
     """Load pending orders from file."""
@@ -48,15 +49,37 @@ def save_positions(positions: Dict[str, Any]) -> None:
 def get_execution_price(ticker: str, execution_date: str) -> Optional[float]:
     """
     Get the opening price for ticker on execution_date.
-    Uses mx_data.get_price(ticker, execution_date).
+    Uses subprocess to call /root/mx-skills/mx-data/mx_data.py.
+    If that fails, falls back to a mock price (100.0) and prints a warning.
     禁止未来函数（no look-ahead bias）
     """
-    try:
-        price = get_price(ticker, execution_date)
-        return price
-    except Exception as e:
-        print(f"[execution_simulator] Error getting price for {ticker} on {execution_date}: {e}")
-        return None
+    # Try real data source first
+    if os.path.exists(MX_DATA_SCRIPT):
+        try:
+            result = subprocess.run(
+                [sys.executable, MX_DATA_SCRIPT, ticker, execution_date],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode == 0:
+                output = result.stdout.strip()
+                if output:
+                    try:
+                        price = float(output)
+                        return price
+                    except ValueError:
+                        print(f"[execution_simulator] Could not parse price from mx_data output: {output}")
+            else:
+                print(f"[execution_simulator] mx_data.py returned error: {result.stderr}")
+        except Exception as e:
+            print(f"[execution_simulator] Error calling mx_data.py: {e}")
+    else:
+        print(f"[execution_simulator] mx_data.py not found at {MX_DATA_SCRIPT}")
+
+    # Fallback: mock price
+    print(f"[execution_simulator] WARNING: Using mock price 100.0 for {ticker} on {execution_date}")
+    return 100.0
 
 def execute_pending_orders(execution_date: str) -> None:
     """
@@ -84,6 +107,7 @@ def execute_pending_orders(execution_date: str) -> None:
         signal_date = order["signal_date"]
         reason = order.get("reason", "")
         target_weight = order.get("target_weight", 0.0)
+        is_test = order.get("is_test_order", False)
 
         # Get execution price (T+1 open)
         price = get_execution_price(ticker, execution_date)
@@ -124,7 +148,8 @@ def execute_pending_orders(execution_date: str) -> None:
             "execution_date": execution_date,
             "execution_price": price,
             "shares": shares if action == "buy" else -shares,
-            "reason": reason
+            "reason": reason,
+            "is_test_order": is_test
         }
         trades.append(trade)
         executed_orders.append(order)
@@ -140,7 +165,7 @@ def execute_pending_orders(execution_date: str) -> None:
     # Write trades CSV
     os.makedirs(PORTFOLIO_DIR, exist_ok=True)
     with open(TRADES_FILE, "w", newline="", encoding="utf-8") as f:
-        fieldnames = ["ticker", "action", "signal_date", "execution_date", "execution_price", "shares", "reason"]
+        fieldnames = ["ticker", "action", "signal_date", "execution_date", "execution_price", "shares", "reason", "is_test_order"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(trades)
@@ -168,6 +193,5 @@ def execute_pending_orders(execution_date: str) -> None:
     print(f"[execution_simulator] Executed {len(executed_orders)} orders on {execution_date}")
 
 if __name__ == "__main__":
-    import sys
     execution_date = sys.argv[1] if len(sys.argv) > 1 else datetime.now().strftime("%Y-%m-%d")
     execute_pending_orders(execution_date)
