@@ -1,38 +1,56 @@
+"""
+run_daily.py
+Daily orchestration script that runs the full pipeline.
+禁止未来函数（no look-ahead bias）
+"""
+
 import os
-import subprocess
-from datetime import datetime
+import sys
+from datetime import datetime, timedelta
 
-BASE_DIR = "/root/research_agent"
-WATCHLIST = f"{BASE_DIR}/config/watchlist.txt"
-OUTPUT_DIR = f"{BASE_DIR}/output"
-LOG_DIR = f"{BASE_DIR}/logs"
-MX_DATA = "/root/mx-skills/mx-data/mx_data.py"
+def run_daily(date: str = None):
+    """
+    Execute daily tasks:
+    1. Generate weekly report (if today is Monday) and save signals
+    2. Generate pending orders from weekly signals
+    3. Execute pending orders
+    4. Generate portfolio report
+    禁止未来函数（no look-ahead bias）
+    """
+    if date is None:
+        date = datetime.now().strftime("%Y-%m-%d")
+    
+    print(f"=== Running daily pipeline for {date} ===")
+    
+    # Step 1: Generate weekly report on Mondays
+    from scripts.weekly_report import generate_report
+    weekday = datetime.strptime(date, "%Y-%m-%d").weekday()
+    if weekday == 0:  # Monday
+        print("Generating weekly report...")
+        signals = generate_report(date)
+        print(f"Generated {len(signals)} signals")
+        # Save signals for portfolio manager
+        os.makedirs("portfolio", exist_ok=True)
+        with open("portfolio/weekly_signals.json", "w", encoding="utf-8") as f:
+            import json
+            json.dump(signals, f, ensure_ascii=False, indent=2)
+        # Generate pending orders from signals
+        from scripts.portfolio_manager import generate_pending_orders
+        generate_pending_orders(date)
+    
+    # Step 2: Execute pending orders (every day)
+    from scripts.execution_simulator import execute_pending_orders
+    print("Executing pending orders...")
+    execute_pending_orders(date)
+    
+    # Step 3: Generate portfolio report
+    from scripts.portfolio_report import generate_report
+    print("Generating portfolio report...")
+    report = generate_report()
+    print(report)
+    
+    print(f"=== Daily pipeline completed for {date} ===")
 
-today = datetime.now().strftime("%Y-%m-%d")
-log_file = f"{LOG_DIR}/run_{today}.log"
-
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
-
-with open(WATCHLIST, "r", encoding="utf-8") as f:
-    queries = [line.strip() for line in f if line.strip()]
-
-with open(log_file, "a", encoding="utf-8") as log:
-    log.write(f"\n===== Run at {datetime.now()} =====\n")
-
-    for q in queries:
-        log.write(f"\n[QUERY] {q}\n")
-        print(f"📊 查询：{q}")
-
-        cmd = f'python3 {MX_DATA} "{q}"'
-        result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-
-        log.write(result.stdout)
-        log.write(result.stderr)
-
-        if result.returncode == 0:
-            print(f"✅ 成功：{q}")
-        else:
-            print(f"❌ 失败：{q}")
-
-print("全部查询完成")
+if __name__ == "__main__":
+    date = sys.argv[1] if len(sys.argv) > 1 else None
+    run_daily(date)
