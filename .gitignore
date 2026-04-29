@@ -16,6 +16,10 @@ logs/
 data/
 portfolio/
 
+# Generated reports
+reports/
+output/
+
 # OS generated files
 .DS_Store
 Thumbs.db
@@ -29,4 +33,9 @@ dist/
 build/
 *.egg-info/
 *.egg
+
+# Aider chat history / cache
 .aider*
+
+# Word documents
+*.docx
