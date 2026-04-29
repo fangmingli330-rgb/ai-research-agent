@@ -16,6 +16,9 @@ sys.path.insert(0, BASE_DIR)
 @app.post("/feishu/events")
 async def feishu_events(request: Request):
     body = await request.json()
+    # 1. Print raw body
+    print(f"[feishu_event] raw body: {json.dumps(body, ensure_ascii=False)}")
+
     # Challenge verification
     if "challenge" in body:
         return JSONResponse({"challenge": body["challenge"]})
@@ -35,11 +38,18 @@ async def feishu_events(request: Request):
         text = content.get("text", "")
     except (json.JSONDecodeError, TypeError):
         text = content_str
+
+    # 2. Print text
+    print(f"[feishu_event] text: {text}")
+    # 3. Print open_id
+    print(f"[feishu_event] open_id: {open_id}")
     
     # Match patterns
     match = re.search(r'(研究公司|公司)\s+(.+)', text)
     if match:
         company_name = match.group(2).strip()
+        # 4. Print company_name
+        print(f"[feishu_event] company_name: {company_name}")
         # Immediate reply
         reply_text = f"已收到研究任务：{company_name}，正在生成报告。"
         feishu_push.push_text(reply_text, open_id=open_id)
@@ -47,6 +57,8 @@ async def feishu_events(request: Request):
         asyncio.create_task(research_dispatcher.dispatch_research(company_name, open_id, message_id))
         return JSONResponse({"msg": "ok"})
     else:
+        # 5. Print ignored
+        print("[feishu_event] ignored:")
         # Not a research command, ignore
         return JSONResponse({"msg": "ignored"})
 
