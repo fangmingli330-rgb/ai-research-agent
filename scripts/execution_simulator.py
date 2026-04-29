@@ -21,6 +21,15 @@ TRADES_FILE = os.path.join(PORTFOLIO_DIR, "trades.csv")
 PORTFOLIO_VALUE_FILE = os.path.join(PORTFOLIO_DIR, "portfolio_value.csv")
 
 MX_DATA_SCRIPT = "/root/mx-skills/mx-data/mx_data.py"
+INSTRUMENT_MAP_PATH = "config/instrument_map.json"
+
+def load_instrument_map() -> Dict[str, str]:
+    """Load instrument map from config file."""
+    if not os.path.exists(INSTRUMENT_MAP_PATH):
+        print(f"[execution_simulator] WARNING: instrument_map not found at {INSTRUMENT_MAP_PATH}")
+        return {}
+    with open(INSTRUMENT_MAP_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def load_pending_orders() -> List[Dict[str, Any]]:
     """Load pending orders from file."""
@@ -49,16 +58,20 @@ def save_positions(positions: Dict[str, Any]) -> None:
 def get_execution_price(ticker: str, execution_date: str) -> Tuple[Optional[float], str]:
     """
     Get the opening price for ticker on execution_date.
-    Uses subprocess to call /root/mx-skills/mx-data/mx_data.py.
+    Uses instrument_map to find the query string for mx_data.py.
     If that fails, falls back to a mock price (100.0) and prints a warning.
     禁止同日买卖，防止事后诸葛亮
     Returns (price, source) where source is "actual" or "mock".
     """
+    # Load instrument map
+    instrument_map = load_instrument_map()
+    query = instrument_map.get(ticker, ticker)  # fallback to ticker itself if not mapped
+
     # Try real data source first
     if os.path.exists(MX_DATA_SCRIPT):
         try:
             result = subprocess.run(
-                [sys.executable, MX_DATA_SCRIPT, ticker, execution_date],
+                [sys.executable, MX_DATA_SCRIPT, query, execution_date],
                 capture_output=True,
                 text=True,
                 timeout=30
