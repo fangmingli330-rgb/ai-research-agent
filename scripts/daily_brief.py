@@ -388,6 +388,32 @@ def call_llm(prompt: str) -> str:
         logger.error(f"LLM API call failed: {e}")
         raise
 
+def _looks_like_llm_title(line: str) -> bool:
+    stripped = line.strip()
+    if stripped.startswith("# "):
+        return True
+    return bool(re.match(r"^A股盘前简报\s+\d{4}-\d{2}-\d{2}$", stripped))
+
+def enforce_report_title(report_text: str, date_str: str) -> str:
+    """Force the program-owned title and remove any LLM-generated title."""
+    expected_title = f"# A股盘前简报 {date_str}"
+    body = report_text.strip()
+    body = re.sub(r"^```(?:markdown|md)?\s*\n", "", body, flags=re.IGNORECASE)
+    body = re.sub(r"\n```\s*$", "", body)
+
+    lines = body.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and _looks_like_llm_title(lines[0]):
+        lines.pop(0)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+
+    body = "\n".join(lines).rstrip()
+    if body:
+        return f"{expected_title}\n\n{body}\n"
+    return f"{expected_title}\n"
+
 # ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
@@ -411,9 +437,8 @@ def generate_report(date_str: str, records: List[IndicatorRecord]) -> str:
 - 禁止生成没有数据支撑的结论。
 - 禁止使用占位符如“XX月XX日”。
 - 禁止输出 URL 编码乱码（如 %E9%AB%98）。
-- 报告结构必须严格按照以下格式：
-
-# A股盘前简报 {date_str}
+- 不要输出一级标题，程序会自动添加唯一标题。
+- 正文结构必须严格按照以下格式：
 
 ## 一、数据获取状态
 用表格列出每个指标是否成功、提取值、查询语句、原始返回摘要。
@@ -443,6 +468,7 @@ def generate_report(date_str: str, records: List[IndicatorRecord]) -> str:
     report_text = re.sub(r'\d{4}年\d{2}月\d{2}日', date_str, report_text)
     report_text = re.sub(r'XX月XX日', '', report_text)
     report_text = re.sub(r'2025年XX月XX日', '', report_text)
+    report_text = enforce_report_title(report_text, date_str)
 
     return report_text
 
@@ -453,7 +479,7 @@ def quality_check(report_text: str, records: List[IndicatorRecord], date_str: st
     """Return (pass, error_message)."""
     errors = []
     expected_title = f"# A股盘前简报 {date_str}"
-    first_line = report_text.strip().splitlines()[0] if report_text.strip() else ""
+    first_line = report_text.splitlines()[0] if report_text else ""
     if first_line != expected_title:
         errors.append(f"报告标题不是 '{expected_title}'")
 
