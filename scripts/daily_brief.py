@@ -67,17 +67,126 @@ INDICATORS = [
     {"name": "北向资金 净流入", "ticker": "NORTHBOUND_NET", "type": "northbound"},
 ]
 
+PRICE_VALUE_RANGES = {
+    "000001.SH": (500.0, 10000.0),
+    "399006.SZ": (500.0, 6000.0),
+    "000922.CSI": (500.0, 20000.0),
+}
+
+MARKDOWN_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$")
+NUMBER_RE = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?")
+
 # ---------------------------------------------------------------------------
 # Data fetching helpers
 # ---------------------------------------------------------------------------
+def _parse_markdown_table_rows(text: str) -> List[List[str]]:
+    """Parse simple markdown table rows into cell lists."""
+    rows = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or "|" not in stripped:
+            continue
+        if MARKDOWN_TABLE_SEPARATOR_RE.match(stripped):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if len(cells) >= 2:
+            rows.append(cells)
+    return rows
+
+def _to_float(value: Any) -> Optional[float]:
+    """Convert a structured numeric value or numeric cell text to float."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    match = NUMBER_RE.search(value.replace(",", ""))
+    if not match:
+        return None
+    try:
+        return float(match.group(0).replace(",", ""))
+    except ValueError:
+        return None
+
+def _extract_latest_price_from_markdown(text: str, ticker: str) -> Optional[float]:
+    """Extract the value under the markdown table column named 最新价."""
+    rows = _parse_markdown_table_rows(text)
+    if len(rows) < 2:
+        return None
+
+    header = rows[0]
+    latest_idx = next((idx for idx, cell in enumerate(header) if "最新价" in cell), None)
+    if latest_idx is None:
+        return None
+
+    code_idx = next(
+        (idx for idx, cell in enumerate(header) if any(key in cell for key in ("代码", "证券代码", "ticker", "Ticker"))),
+        None,
+    )
+    name_idx = next((idx for idx, cell in enumerate(header) if "名称" in cell), None)
+
+    candidates = []
+    for row in rows[1:]:
+        if latest_idx >= len(row):
+            continue
+        if code_idx is not None and code_idx < len(row) and ticker not in row[code_idx]:
+            continue
+        value = _to_float(row[latest_idx])
+        if value is not None:
+            candidates.append(value)
+
+    if not candidates and len(rows) == 2 and latest_idx < len(rows[1]):
+        value = _to_float(rows[1][latest_idx])
+        if value is not None:
+            candidates.append(value)
+
+    if name_idx is not None:
+        logger.debug(f"Parsed markdown table with name column at index {name_idx}")
+    return candidates[0] if len(candidates) == 1 else None
+
+def _validate_latest_price(value: Optional[float], ticker: str) -> Optional[float]:
+    """Reject values that are implausible for known index point levels."""
+    if value is None:
+        return None
+    value_range = PRICE_VALUE_RANGES.get(ticker)
+    if value_range is None:
+        return value
+    lower, upper = value_range
+    if lower <= value <= upper:
+        return value
+    return None
+
+def extract_latest_price(raw_value: Any, raw_summary: str, ticker: str) -> Tuple[Optional[float], str]:
+    """Extract a latest-price value without falling back to the first free-text number."""
+    text_sources = []
+    if isinstance(raw_value, str):
+        text_sources.append(raw_value)
+    if raw_summary:
+        text_sources.append(raw_summary)
+
+    for text in text_sources:
+        table_value = _extract_latest_price_from_markdown(text, ticker)
+        validated = _validate_latest_price(table_value, ticker)
+        if validated is not None:
+            return validated, "extracted from markdown table column 最新价"
+
+    structured_value = _to_float(raw_value) if not isinstance(raw_value, str) else None
+    validated = _validate_latest_price(structured_value, ticker)
+    if validated is not None:
+        return validated, "using structured numeric value"
+
+    return None, "unable to extract reliable 最新价"
+
 def fetch_price(ticker: str, date: str) -> Tuple[Optional[float], str]:
     """Fetch latest price for a stock index."""
     try:
-        price = get_price(ticker, date)
+        raw_value = get_price(ticker, date)
+        raw_summary = f"get_price({ticker}, {date}) -> {raw_value}"
+        price, extraction_note = extract_latest_price(raw_value, raw_summary, ticker)
         if price is not None:
-            return price, f"get_price({ticker}, {date}) -> {price}"
-        else:
-            return None, f"get_price({ticker}, {date}) returned None"
+            return price, f"{raw_summary}; {extraction_note}"
+        return None, f"{raw_summary}; {extraction_note}"
     except Exception as e:
         return None, f"get_price({ticker}, {date}) raised {e}"
 
@@ -138,42 +247,40 @@ def fetch_indicator(indicator: IndicatorRecord, date: str) -> IndicatorRecord:
     }
 
 # ---------------------------------------------------------------------------
-# LLM call (OpenAI)
+# LLM call (OpenAI-compatible)
 # ---------------------------------------------------------------------------
 def call_llm(prompt: str) -> str:
-    """Call OpenAI GPT-4 to generate report text."""
+    """Call DeepSeek through the OpenAI SDK client API to generate report text."""
     try:
-        import openai
+        from openai import OpenAI
     except ImportError:
         logger.error("openai package not installed. Cannot generate report.")
         raise RuntimeError("openai package required")
 
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
-        logger.error("OPENAI_API_KEY environment variable not set.")
-        raise RuntimeError("OPENAI_API_KEY not set")
+        logger.error("OPENAI_API_KEY or DEEPSEEK_API_KEY environment variable not set.")
+        raise RuntimeError("OPENAI_API_KEY or DEEPSEEK_API_KEY not set")
 
-    openai.api_key = api_key
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.deepseek.com"
+    )
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "你是一个专业的A股市场分析师。请严格按照用户要求生成报告。"},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.3,
-            max_tokens=2000,
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}]
         )
-        text = response.choices[0].message.content.strip()
-        return text
+        content = response.choices[0].message.content
+        return content.strip()
     except Exception as e:
-        logger.error(f"OpenAI API call failed: {e}")
+        logger.error(f"LLM API call failed: {e}")
         raise
 
 # ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
-def generate_report(date_str: str) -> str:
+def generate_report(date_str: str) -> Tuple[str, List[IndicatorRecord]]:
     """Generate the full report markdown."""
     # 1. Fetch all indicators
     records: List[IndicatorRecord] = []
@@ -186,9 +293,9 @@ def generate_report(date_str: str) -> str:
     raw_lines = []
     for rec in records:
         if rec["success"]:
-            raw_lines.append(f"{rec['name']}: {rec['value']}")
+            raw_lines.append(f"{rec['name']}: {rec['value']} | 原始摘要: {rec['raw_summary']}")
         else:
-            raw_lines.append(f"{rec['name']}: 数据缺失")
+            raw_lines.append(f"{rec['name']}: 数据缺失 | 原始摘要: {rec['raw_summary']}")
     raw_text = "\n".join(raw_lines)
 
     # 3. Build prompt
@@ -212,7 +319,7 @@ def generate_report(date_str: str) -> str:
 # A股盘前简报 {date_str}
 
 ## 一、数据获取状态
-用表格列出每个指标是否成功、提取值、查询语句。
+用表格列出每个指标是否成功、提取值、查询语句、原始返回摘要。
 
 ## 二、核心市场判断
 只基于成功获取的数据分析。
@@ -240,7 +347,7 @@ def generate_report(date_str: str) -> str:
     report_text = re.sub(r'XX月XX日', '', report_text)
     report_text = re.sub(r'2025年XX月XX日', '', report_text)
 
-    return report_text
+    return report_text, records
 
 # ---------------------------------------------------------------------------
 # Quality checks
@@ -248,6 +355,10 @@ def generate_report(date_str: str) -> str:
 def quality_check(report_text: str, records: List[IndicatorRecord]) -> Tuple[bool, str]:
     """Return (pass, error_message)."""
     errors = []
+    expected_title = f"# A股盘前简报 {datetime.date.today().strftime('%Y-%m-%d')}"
+    first_line = report_text.strip().splitlines()[0] if report_text.strip() else ""
+    if first_line != expected_title:
+        errors.append(f"报告标题不是 '{expected_title}'")
 
     # Check for placeholder dates
     if re.search(r'XX月XX日', report_text):
@@ -277,7 +388,7 @@ def main():
 
     # Generate report
     try:
-        report_text = generate_report(date_str)
+        report_text, records = generate_report(date_str)
     except Exception as e:
         logger.error(f"Report generation failed: {e}")
         error_msg = f"盘前报告生成失败：{e}，请查看日志。"
@@ -286,14 +397,6 @@ def main():
         with open(os.path.join(LOG_DIR, "daily_brief_error.log"), "a", encoding="utf-8") as f:
             f.write(f"{datetime.datetime.now()} - {error_msg}\n")
         sys.exit(1)
-
-    # Re-fetch records for quality check (they were already fetched inside generate_report)
-    # We'll re-fetch to have them available here (or we could return them from generate_report)
-    # For simplicity, re-fetch
-    records = []
-    for ind in INDICATORS:
-        rec = fetch_indicator(ind, date_str)
-        records.append(rec)
 
     # Quality check
     passed, error_detail = quality_check(report_text, records)
