@@ -138,7 +138,7 @@ def fetch_indicator(indicator: IndicatorRecord, date: str) -> IndicatorRecord:
     }
 
 # ---------------------------------------------------------------------------
-# LLM call (DeepSeek via OpenAI SDK)
+# LLM call (OpenAI / DeepSeek)
 # ---------------------------------------------------------------------------
 def call_llm(prompt: str) -> str:
     """Call DeepSeek (via OpenAI SDK) to generate report text."""
@@ -148,10 +148,9 @@ def call_llm(prompt: str) -> str:
         logger.error("openai package not installed. Cannot generate report.")
         raise RuntimeError("openai package required")
 
-    # Try OPENAI_API_KEY first, then DEEPSEEK_API_KEY
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        logger.error("Neither OPENAI_API_KEY nor DEEPSEEK_API_KEY environment variable set.")
+        logger.error("OPENAI_API_KEY or DEEPSEEK_API_KEY environment variable not set.")
         raise RuntimeError("API key not set")
 
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
@@ -168,7 +167,7 @@ def call_llm(prompt: str) -> str:
         text = response.choices[0].message.content.strip()
         return text
     except Exception as e:
-        logger.error(f"DeepSeek API call failed: {e}")
+        logger.error(f"LLM API call failed: {e}")
         raise
 
 # ---------------------------------------------------------------------------
@@ -230,7 +229,7 @@ def generate_report(date_str: str) -> str:
 请生成报告。"""
 
     # 4. Call LLM
-    logger.info("Calling DeepSeek to generate report...")
+    logger.info("Calling LLM to generate report...")
     report_text = call_llm(prompt)
 
     # 5. Clean URL-encoded sequences
